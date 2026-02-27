@@ -32,9 +32,7 @@ let ledTimer = null;
 
 // ===== LED CONTROL =====
 function clearLEDS() {
-  LED1.reset();
-  LED2.reset();
-  LED3.reset();
+[LED1, LED2, LED3].forEach((led) => led.reset());
 };
 
 function show(color, duration) {
