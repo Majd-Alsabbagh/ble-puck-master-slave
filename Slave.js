@@ -1,79 +1,89 @@
 // ======================
-// SLAVE - FINAL STABLE
+// SLAVE - FINAL (const/let)
 // ======================
 
-var COMPANY_ID = 0x1234;
-var SLAVE_ID = 1; // CHANGE PER DEVICE
+const COMPANY_ID = 0x1234;
+const SLAVE_ID = 1; // CHANGE PER DEVICE
 
 // Packet Types
-var TYPE_EVENT = 1;
-var TYPE_ACK = 2;
-var TYPE_MASTER_DEAD = 3;
-var TYPE_MASTER_ALIVE = 4;
+const TYPE_EVENT = 1;
+const TYPE_ACK = 2;
+const TYPE_MASTER_DEAD = 3;
+const TYPE_MASTER_ALIVE = 4;
 
 // Timing
-var EVENT_WINDOW = 1200;        // short broadcast
-var ACK_TIMEOUT = 5000;        // wait for ACK
-var MASTER_DEAD_TIME = 120000; // 2 minutes
+const EVENT_WINDOW = 1200;
+const ACK_TIMEOUT = 5000;
+const MASTER_DEAD_TIME = 120000;
 
 // States
-var STATE_IDLE = 0;
-var STATE_WAITING_ACK = 1;
-var STATE_MASTER_DEAD = 2;
+const STATE_IDLE = 0;
+const STATE_WAITING_ACK = 1;
+const STATE_MASTER_DEAD = 2;
 
-var state = STATE_IDLE;
-var seq = 0;
-var wasDead = false;
-var ackTimer = null;
-var deadTimer = null;
-var ledTimer = null;
+let state = STATE_IDLE;
+let seq = 0;
+let wasDead = false;
+
+let ackTimer = null;
+let deadTimer = null;
+let ledTimer = null;
 
 
 // ===== LED CONTROL =====
-function clearLEDs() {
+function clearLEDS() {
   LED1.reset();
   LED2.reset();
   LED3.reset();
-}
+};
 
 function show(color, duration) {
-
   if (ledTimer) {
-    clearTimeout(ledTimer);
+    clearTimeout(ledTimer)
     ledTimer = null;
-  }
+  };
 
-  clearLEDs();
+  clearLEDS();
 
-  if (color === 1) LED1.set();                 // green
-  if (color === 2) LED3.set();                 // blue
-  if (color === 3) { LED1.set(); LED2.set(); } // yellow
-  if (color === 4) LED2.set();                 // red
+  if (color === 1) {
+    LED1.set();
+  };
 
-  ledTimer = setTimeout(function() {
-    clearLEDs();
+  if (color === 2) {
+    LED3.set();
+  };
+
+  if (color === 3) {
+    LED1.set();
+    LED2.set();
+  };
+
+  if (color === 4) {
+    LED2.set();
+  };
+
+  ledTimer = setTimeout(() => {
+    clearLEDS();
     ledTimer = null;
-  }, duration);
-}
+  }, duration)
+};
 
 
 // ===== PACKET BUILDERS =====
 function buildEvent(count) {
-  var b = new Uint8Array(4);
-  b[0] = TYPE_EVENT;
-  b[1] = SLAVE_ID;
-  b[2] = count;
-  b[3] = seq;
-  return b;
-}
+  const bytes = new Uint8Array(4)
 
-function buildMasterDead() {
-  return new Uint8Array([TYPE_MASTER_DEAD]);
-}
+  bytes[0] = TYPE_EVENT;
+  bytes[1] = SLAVE_ID;
+  bytes[2] = count;
+  bytes[3] = seq;
 
-function buildMasterAlive() {
-  return new Uint8Array([TYPE_MASTER_ALIVE]);
-}
+  return bytes;
+};
+
+function buildSingleBytePacket(type) {
+  return new Uint8Array([type]);
+};
 
 
 // ===== ADVERTISING =====
@@ -81,18 +91,19 @@ function advertise(bytes, interval) {
   NRF.setAdvertising({}, {
     manufacturer: COMPANY_ID,
     manufacturerData: bytes,
-    interval: interval
-  });
-}
+    interval
+  })
+};
 
 
 // ===== SEND EVENT =====
 function sendEvent(count) {
-
-  // Block only if already waiting for ACK
-  if (state === STATE_WAITING_ACK) return;
+  if (state === STATE_WAITING_ACK) {
+    return;
+  }
 
   seq = (seq + 1) % 256;
+
   wasDead = (state === STATE_MASTER_DEAD);
   state = STATE_WAITING_ACK;
 
@@ -104,24 +115,21 @@ function sendEvent(count) {
   advertise(buildEvent(count), 250);
   show(count, 500);
 
-  // Stop advertising quickly
-  setTimeout(function() {
+  setTimeout(() => {
     NRF.setAdvertising({}, {});
-    NRF.setScan(scanHandler, { active:false });
+    NRF.setScan(scanHandler, { active: false });
   }, EVENT_WINDOW);
 
-  // Wait for ACK
-  ackTimer = setTimeout(function() {
+  ackTimer = setTimeout(() => {
     if (state === STATE_WAITING_ACK) {
       triggerMasterDead();
     }
   }, ACK_TIMEOUT);
-}
+};
 
 
 // ===== MASTER DEAD =====
 function triggerMasterDead() {
-
   state = STATE_MASTER_DEAD;
 
   if (deadTimer) {
@@ -129,125 +137,134 @@ function triggerMasterDead() {
     deadTimer = null;
   }
 
-  advertise(buildMasterDead(), 500);
+  advertise(buildSingleBytePacket(TYPE_MASTER_DEAD), 500);
   show(2, MASTER_DEAD_TIME);
 
-  deadTimer = setTimeout(function() {
+  deadTimer = setTimeout(() => {
     NRF.setAdvertising({}, {});
     state = STATE_IDLE;
   }, MASTER_DEAD_TIME);
-}
+};
 
 
 // ===== MASTER ALIVE =====
 function sendMasterAlive() {
+  advertise(buildSingleBytePacket(TYPE_MASTER_ALIVE), 400);
 
-  advertise(buildMasterAlive(), 400);
-
-  setTimeout(function() {
+  setTimeout(() => {
     NRF.setAdvertising({}, {});
   }, 2000);
-}
+};
 
 
 // ===== SCAN HANDLER =====
 function scanHandler(device) {
+  if (!device.manufacturerData) {
+    return;
+  };
 
-  if (!device.manufacturerData) return;
-  if (device.manufacturer !== COMPANY_ID) return;
+  if (device.manufacturer !== COMPANY_ID) {
+    return;
+  };
 
-  var d = device.manufacturerData;
+  const data = device.manufacturerData;
 
   // ----- ACK -----
-  if (d[0] === TYPE_ACK && d.length >= 3) {
+  if (data[0] === TYPE_ACK && data.length >= 3) {
+    const ackSlave = data[1];
+    const ackSeq = data[2];
 
-    var ackSlave = d[1];
-    var ackSeq = d[2];
-
-    if (state === STATE_WAITING_ACK &&
-        ackSlave === SLAVE_ID &&
-        ackSeq === seq) {
-
+    if (
+      state === STATE_WAITING_ACK &&
+      ackSlave === SLAVE_ID &&
+      ackSeq === seq
+    ) {
       clearTimeout(ackTimer);
       ackTimer = null;
 
       NRF.setAdvertising({}, {});
 
-      // If recovering from dead state
       if (wasDead) {
         sendMasterAlive();
         wasDead = false;
       }
 
       state = STATE_IDLE;
-      clearLEDs();
+      clearLEDS();
     }
   }
 
   // ----- MASTER DEAD from another slave -----
-  if (d[0] === TYPE_MASTER_DEAD) {
-
+  if (data[0] === TYPE_MASTER_DEAD) {
     state = STATE_MASTER_DEAD;
 
-    if (deadTimer) clearTimeout(deadTimer);
+    if (deadTimer) {
+      clearTimeout(deadTimer);
+    };
 
     show(2, MASTER_DEAD_TIME);
 
-    deadTimer = setTimeout(function() {
+    deadTimer = setTimeout(() => {
       state = STATE_IDLE;
-      clearLEDs();
+      clearLEDS();
     }, MASTER_DEAD_TIME);
-  }
+  };
 
   // ----- MASTER ALIVE -----
-  if (d[0] === TYPE_MASTER_ALIVE) {
-
+  if (data[0] === TYPE_MASTER_ALIVE) {
     state = STATE_IDLE;
 
-    if (deadTimer) clearTimeout(deadTimer);
+    if (deadTimer) {
+      clearTimeout(deadTimer);
+      deadTimer = null;
+    };
+
     NRF.setAdvertising({}, {});
-    clearLEDs();
+    clearLEDS();
   }
-}
+};
 
 
-// Start scanning immediately
-NRF.setScan(scanHandler, { active:false });
-
+// ===== START SCANNING =====
+NRF.setScan(scanHandler, { active: false });
 
 // ===== BUTTON HANDLING =====
-var pressStart = 0;
-var clickTimer = null;
-var clickCount = 0;
+let pressStart = 0;
+let clickTimer = null;
+let clickCount = 0;
 
-setWatch(function(e) {
-
+setWatch((e) => {
   if (e.state) {
     pressStart = getTime();
   } else {
+    const duration = getTime() - pressStart;
 
-    var duration = getTime() - pressStart;
-
-    // Long press
     if (duration > 1.5) {
       sendEvent(4);
       return;
     }
 
-    clickCount++;
+    clickCount += 1;
 
-    if (clickTimer) clearTimeout(clickTimer);
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+    };
 
-    clickTimer = setTimeout(function() {
+    clickTimer = setTimeout(() => {
+      if (clickCount === 1) {
+        sendEvent(1);
+      };
 
-      if (clickCount === 1) sendEvent(1);
-      if (clickCount === 2) sendEvent(2);
-      if (clickCount === 3) sendEvent(3);
+      if (clickCount === 2) {
+        sendEvent(2);
+      };
 
-      clickCount = 0;
-      clickTimer = null;
+      if (clickCount === 3) {
+        sendEvent(3);
+      };
 
-    }, 400);
+      clickCount = 0
+      clickTimer = null
+    }, 400)
   }
-
-}, BTN, { repeat:true, edge:"both", debounce:50 });
+}, BTN, { repeat: true, edge: 'both', debounce: 50 })
